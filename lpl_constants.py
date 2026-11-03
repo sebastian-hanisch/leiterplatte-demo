@@ -33,6 +33,14 @@ MINI_MAX_ORDERS = 720      # bis 6 Netze: alle Reihenfolgen aufzählbar
 EXACT_TIME_LIMIT = 20.0    # Sekunden für CP-SAT
 EXACT_WORKERS = 4
 
+# --- Bestückung (Folgestück in derselben Demo) --------------------------------------------------------------------------------------------
+BST_K_MIN, BST_K_MAX, BST_DEFAULT_K = 1, 4, 4      # Düsen am Kopf; je Runde k! Setzreihenfolgen, daher höchstens 4
+BST_METHODS = ("Maschinenpraxis", "Erst Plätze, dann Reihenfolge", "Abwechselnd", "Gemeinsam")
+BST_EXTRA_SLOTS = 4        # freie Zuführplätze über die Typenzahl hinaus
+BST_PITCH = 3.0            # Abstand der Zuführplätze in Rasterzellen
+BST_ROW_OFFSET = 3         # Zuführreihe liegt so viele Zellen unter dem Brett
+BST_EVALS_PER_PART = 600   # Kostenauswertungen je Bestückort und Verfahren (gleich für alle Suchverfahren): O(Auswertungen * Runden * k!)
+
 # --- Farben --------------------------------------------------------------------------------------------------------------------------------
 COLOR_TOP = "#d6604d"
 COLOR_BOTTOM = "#4393c3"

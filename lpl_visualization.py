@@ -2,6 +2,7 @@
 
 import plotly.graph_objects as go
 
+import lpl_bestueck as B
 import lpl_constants as C
 from lpl_grid import NC_PAD, Board, cell_of
 from lpl_scenario import dims
@@ -148,3 +149,52 @@ def build_via_figure(rows: list):
     fig.update_layout(xaxis=dict(title="Via-Kosten", type="category"), yaxis=dict(title="Vias", rangemode="tozero", fixedrange=True),
                       yaxis2=dict(title="Länge", overlaying="y", side="right", rangemode="tozero", fixedrange=True))
     return _base(fig, 320)
+
+
+_TYPE_COLORS = ("#d6604d", "#4393c3", "#4d9221", "#8c6bb1", "#e08214", "#2F6B65", "#999999", "#b8860b")
+
+
+def build_bestueck_methods_figure(plans, gaps):
+    """Fahrstrecke je Verfahren; über den Balken Prozent über der kürzesten Fahrt."""
+    names = [p.method for p in plans]
+    costs = [round(p.cost, 1) for p in plans]
+    fig = go.Figure(go.Bar(x=names, y=costs, marker_color=[C.COLOR_OTHER, C.COLOR_LINE, C.COLOR_LINE, C.COLOR_CHOSEN],
+                           text=[f"+{g:.1f} %".replace(".", ",") if g > 1e-9 else "kürzeste" for g in gaps], textposition="outside",
+                           hovertemplate="%{x}: %{y} Zellen<extra></extra>"))
+    fig.update_yaxes(title_text="Fahrstrecke (Zellen)", rangemode="tozero")
+    return _base(fig, 300)
+
+
+def build_bestueck_figure(fi, plan, k, width, height):
+    """Brett mit Bestückorten (Farbe = Typ, Zahl = Platz in der Reihenfolge), Zuführreihe unten und der Fahrt des Kopfes: gestrichelt holen, durchgezogen setzen."""
+    fig = go.Figure()
+    fig.add_shape(type="rect", x0=0, x1=width, y0=0, y1=height, line=dict(color="rgba(80,80,80,0.9)", width=2), layer="below")
+    pick_x, pick_y, put_x, put_y = [], [], [], []
+    for _, pts in B.plan_route(fi, plan, k):
+        start, a, b = pts[0], pts[1], pts[2]
+        pick_x += [start[0], a[0], b[0], None]
+        pick_y += [start[1], a[1], b[1], None]
+        chain = (b,) + tuple(pts[3:])
+        put_x += [p[0] for p in chain] + [None]
+        put_y += [p[1] for p in chain] + [None]
+    fig.add_trace(go.Scatter(x=pick_x, y=pick_y, mode="lines", line=dict(color="rgba(150,150,150,0.9)", width=2, dash="dot"), name="holen", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=put_x, y=put_y, mode="lines", line=dict(color=C.COLOR_LINE, width=2), name="setzen", hoverinfo="skip"))
+    order = {j: i + 1 for i, j in enumerate(plan.sequence)}
+    for t, label in enumerate(fi.type_names):
+        idx = [j for j in range(fi.n) if fi.types[j] == t]
+        fig.add_trace(go.Scatter(x=[fi.positions[j][0] for j in idx], y=[fi.positions[j][1] for j in idx], mode="markers+text", text=[str(order[j]) for j in idx],
+                                 textposition="middle center", textfont=dict(size=9, color="white"),
+                                 marker=dict(size=17, color=_TYPE_COLORS[t % len(_TYPE_COLORS)]), name=label,
+                                 hovertext=[f"{fi.names[j]} ({label}), Platz {order[j]}" for j in idx], hoverinfo="text"))
+    used = {plan.assignment[t]: t for t in range(fi.n_types)}
+    fig.add_trace(go.Scatter(x=[s[0] for i, s in enumerate(fi.slots) if i not in used], y=[s[1] for i, s in enumerate(fi.slots) if i not in used], mode="markers",
+                             marker=dict(size=12, symbol="square-open", color="rgba(150,150,150,0.8)"), name="freier Zuführplatz", hoverinfo="skip"))
+    for s, t in used.items():
+        fig.add_trace(go.Scatter(x=[fi.slots[s][0]], y=[fi.slots[s][1]], mode="markers", marker=dict(size=14, symbol="square", color=_TYPE_COLORS[t % len(_TYPE_COLORS)]),
+                                 showlegend=False, hovertext=f"Platz {s + 1}: {fi.type_names[t]}", hoverinfo="text"))
+    fig.add_trace(go.Scatter(x=[fi.home[0]], y=[fi.home[1]], mode="markers", marker=dict(size=10, symbol="diamond", color="black"), name="Start", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[-1, width + 1], y=[-1, fi.slots[0][1] + 2], mode="markers", marker=dict(opacity=0), showlegend=False, hoverinfo="skip"))
+    fig.update_xaxes(visible=False, constrain="domain")
+    fig.update_yaxes(visible=False, autorange="reversed", scaleanchor="x", scaleratio=1)
+    fig.update_layout(height=520, margin=dict(l=5, r=5, t=5, b=5), legend=dict(orientation="h", y=-0.02), plot_bgcolor="rgba(0,0,0,0)")
+    return lock_axes(fig)

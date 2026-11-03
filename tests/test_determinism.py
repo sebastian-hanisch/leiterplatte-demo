@@ -7,7 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = (
     "import lpl_evaluation as ev; a = ev.analyse(ev.Settings(n_ic=3, util=60, seed=5));"
-    "print(a.hpwl, [(m, sorted(a.routings[m].failed), v['wirelength'], v['vias']) for m, v in a.metrics.items()])"
+    "print(a.hpwl, [(m, sorted(a.routings[m].failed), v['wirelength'], v['vias']) for m, v in a.metrics.items()]);"
+    "b = ev.bestueckung_for(a, 2); print([(p.assignment, p.sequence, p.cost) for p in b.plans])"
 )
 
 

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from statistics import median
 
+import lpl_bestueck as B
 import lpl_constants as C
 from lpl_grid import Board, build_board
 from lpl_placement import check_placement, hpwl, net_hpwl, place
@@ -171,6 +172,49 @@ def via_comparison(settings: Settings, costs=(1, 4, 12, 30)) -> list:
         m = metrics_of(board, hp_nets, r, float(c))
         rows.append({"via_cost": c, "failed": m["failed"], "vias": m["vias"], "wirelength": m["wirelength"], "converged": m["converged"]})
     return rows
+
+
+# ---------------------------------------------------------------- Bestückung (Folgestück)
+@dataclass(frozen=True)
+class BestueckAnalysis:
+    k: int
+    fi: B.FeederInstance
+    plans: tuple        # je Verfahren (C.BST_METHODS) ein FeederPlan
+    gaps: tuple         # Prozent über der besten gefundenen Fahrt, je Verfahren
+    violations: tuple   # Fehlermeldungen des unabhängigen Prüfers (leer = zulässig)
+
+
+def percent_over_best(costs) -> tuple:
+    """Prozent, die jede Fahrt über der kürzesten liegt; ohne Fahrt (Kosten 0) gibt es nichts zu vergleichen."""
+    best = min(costs)
+    return tuple(0.0 if best <= 0 else 100.0 * (c / best - 1.0) for c in costs)
+
+
+def bestueckung_for(a: Analysis, k: int) -> BestueckAnalysis:
+    """Bestückt die Platine der Analyse (Bauteile ohne Stecker) mit allen vier Verfahren bei gleichem Budget."""
+    fi = B.make_feeder_instance(a.inst, a.poses)
+    plans = B.solve_all(fi, k, a.settings.seed)
+    violations = tuple(e for p in plans for e in B.check_plan(fi, p, k))
+    return BestueckAnalysis(k, fi, plans, percent_over_best([p.cost for p in plans]), violations)
+
+
+def bestueck_row(settings: Settings, k: int) -> dict:
+    """Eine Instanz der Messreihen: Fahrt und Prozent über der besten je Verfahren."""
+    b = bestueckung_for(analyse(settings), k)
+    return {"seed": settings.seed, "n": b.fi.n, "costs": tuple(p.cost for p in b.plans), "gaps": b.gaps, "violations": len(b.violations)}
+
+
+def verdict_bestueckung(costs, k: int) -> tuple[str, str]:
+    """Wie viel verschenken die einfachen Wege? Zahlen aus den Fahrten der vier Verfahren (Reihenfolge C.BST_METHODS)."""
+    gaps = percent_over_best(costs)
+    best = min(costs)
+    head = (f"Die kürzeste Fahrt hat {_g(round(best, 1))} Zellen (Kopf mit {k} {'Düse' if k == 1 else 'Düsen'}). "
+            f"Die Maschinenpraxis fährt {_g(round(gaps[0], 1))} % mehr, „erst Plätze, dann Reihenfolge“ {_g(round(gaps[1], 1))} %.")
+    if gaps[1] >= 1.0:
+        return "success", head + f" Beide Entscheidungen zusammen zu treffen lohnt sich hier: abwechselnd {_g(round(gaps[2], 1))} %, gemeinsam {_g(round(gaps[3], 1))} %."
+    if max(gaps[1:]) < 1e-9:
+        return "info", head + " Alle Suchverfahren finden dieselbe Fahrt: Auf dieser Platine ist nichts zu gewinnen."
+    return "info", head + " Die Trennung genügt hier: kein gekoppeltes Verfahren liegt um mehr als einen Prozentpunkt vor ihr."
 
 
 # ---------------------------------------------------------------- Rangfolge der Verfahren

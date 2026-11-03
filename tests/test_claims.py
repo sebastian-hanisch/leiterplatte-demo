@@ -231,3 +231,40 @@ def test_the_order_trap_preset_differs_from_short_first_on_the_same_board():
     p = C.PRESETS["Reihenfolge-Falle"]
     short = ev.analyse(Settings(p["n_ic"], p["util"], p["pin_use"], p["placement"], C.ORDERS[0], p["via"], p["iterations"], p["seed"]))
     assert short.metrics[C.METHODS[0]]["failed"] == 3
+
+
+# ---- Befund 6: Bestückung -----------------------------------------------------------------------------------------------------------------
+
+BST_EXPECTED = {
+    1: ((7.41, 0.39, 0.09, 0.01), (0, 11, 15, 19)),
+    2: ((12.48, 1.87, 1.12, 0.28), (0, 2, 8, 11)),
+    3: ((15.65, 3.45, 1.57, 0.59), (0, 2, 5, 14)),
+    4: ((18.77, 3.84, 1.70, 0.65), (0, 0, 5, 15)),
+}
+
+
+@pytest.fixture(scope="module")
+def bestueck_sweeps():
+    ks = sorted(BST_EXPECTED)
+    with ProcessPoolExecutor(max_workers=WORKERS) as ex:
+        return {k: list(ex.map(ev.bestueck_row, [Settings(seed=s) for s in SEEDS], [k] * len(SEEDS))) for k in ks}
+
+
+@pytest.mark.parametrize("k", sorted(BST_EXPECTED))
+def test_bestueckung_gap_to_the_shortest_trip(bestueck_sweeps, k):
+    rows = bestueck_sweeps[k]
+    means, best_in = BST_EXPECTED[k]
+    assert all(r["n"] == 18 and r["violations"] == 0 for r in rows)
+    for i, expected in enumerate(means):
+        assert sum(r["gaps"][i] for r in rows) / len(rows) == pytest.approx(expected, abs=0.0051)
+    for i, expected in enumerate(best_in):
+        assert sum(r["gaps"][i] < 1e-9 for r in rows) == expected
+
+
+def test_bestueckung_extremes_named_in_the_readme(bestueck_sweeps):
+    rows = bestueck_sweeps[4]
+    assert max(r["gaps"][1] for r in rows) == pytest.approx(13.62, abs=0.0051)
+    assert max(r["gaps"][0] for r in rows) == pytest.approx(35.73, abs=0.0051)
+    # die Lücke der Trennung wächst mit der Düsenzahl (Mittel über 20 Instanzen)
+    gaps = [sum(r["gaps"][1] for r in bestueck_sweeps[k]) / 20 for k in sorted(BST_EXPECTED)]
+    assert gaps == sorted(gaps)

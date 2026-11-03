@@ -24,7 +24,15 @@ from lpl_presets import (
     sync_query_params,
 )
 from lpl_router import Routing, check_feasible, routing_cost
-from lpl_visualization import build_board_figure, build_methods_figure, build_order_figure, build_placement_figure, build_via_figure
+from lpl_visualization import (
+    build_board_figure,
+    build_bestueck_figure,
+    build_bestueck_methods_figure,
+    build_methods_figure,
+    build_order_figure,
+    build_placement_figure,
+    build_via_figure,
+)
 
 st.set_page_config(page_title="Leiterplatte – Sebastian Hanisch", layout="wide")
 
@@ -55,6 +63,11 @@ def _vias(settings):
 
 
 @st.cache_data(show_spinner=False)
+def _bestueckung(settings, k):
+    return ev.bestueckung_for(_analysis(settings), k)
+
+
+@st.cache_data(show_spinner=False)
 def _mini(spec, via_cost, iterations):
     """Mini-Brett: alle Reihenfolgen, Rip-up, Negotiated Congestion und der exakte Löser (ortools erst hier importiert)."""
     from lpl_exact import solve_exact
@@ -76,7 +89,9 @@ zwei Netze dürfen keine Zelle teilen, und ein **Via** wechselt die Lage. Jedes 
 und die **Reihenfolge** entscheidet mit. Die Demo vergleicht drei Verlegeregeln (**sequentiell**, **Rip-up and Reroute**, **Negotiated Congestion**) und prüft die Aussagen
 auf einem **Mini-Brett** mit einem **exakten Löser**.
 
-Weiter unten: die **Kernfrage** und die Expander **🔧 Wie wir das erreichen – vollständiger Methodenvergleich**, **📐 Mathematische Formulierung** und **🚧 Wo die Annahmen enden**.
+Danach wird dieselbe Platine **bestückt**: ein Automat holt die Bauteile von Zuführplätzen und setzt sie; **welcher Typ auf welchen Platz** und **in welcher Reihenfolge** entscheiden über die Fahrstrecke.
+
+Weiter unten: die **Kernfrage**, der Abschnitt **🏭 Bestückung** und die Expander **🔧 Wie wir das erreichen – vollständiger Methodenvergleich**, **📐 Mathematische Formulierung** und **🚧 Wo die Annahmen enden**.
 """
 )
 
@@ -178,6 +193,45 @@ getattr(st, kind)(text)
 st.plotly_chart(build_order_figure(spread, a.metrics[C.METHODS[1]]["failed"], a.metrics[C.METHODS[2]]["failed"]), width="stretch", key="order_chart")
 st.caption("Balken: wie viele der Zufallsreihenfolgen wie viele Netze unverlegt lassen (sequentielles Verlegen, gleiche Platzierung). Linien: Rip-up und Negotiated Congestion auf derselben Platzierung.")
 
+# --- Bestückung ----------------------------------------------------------------------------------------------------------------------------
+
+st.markdown("## 🏭 Bestückung: wie setzt der Automat die Platine?")
+st.markdown(
+    "Die Bauteile dieser Platine (ohne die Stecker) werden von einem Portalautomaten gesetzt. Jeder Bauteiltyp liegt auf **einem Zuführplatz** einer Reihe unter dem Brett; der Kopf hat "
+    "**k Düsen** und holt erst k Teile, setzt dann k Teile. Zwei Entscheidungen: **welcher Typ auf welchen Platz** und **in welcher Reihenfolge gesetzt wird**. "
+    "Verglichen werden die **Maschinenpraxis** (häufigste Typen in die Mitte, nächstes Teil zuerst), **erst Plätze, dann Reihenfolge** (Ungarische Methode, danach nur die Reihenfolge), "
+    "**abwechselnd** und **gemeinsam** (beides in einer Suche) bei gleichem Rechenbudget. Die Suche braucht einige Sekunden und läuft erst auf Klick."
+)
+bst_k = st.slider("Düsen am Kopf", C.BST_K_MIN, C.BST_K_MAX, C.BST_DEFAULT_K, key="bst_k",
+                  help="Eine Düse: ein Teil holen, setzen. Mehr Düsen: erst k Teile holen, dann k setzen; je Runde werden alle k! Setzreihenfolgen geprüft.")
+if st.button("Bestückung berechnen", key="bst_start"):
+    st.session_state["bst_done"] = (settings, int(bst_k))
+if st.session_state.get("bst_done") == (settings, int(bst_k)):
+    with st.spinner("Suche Zuführplätze und Reihenfolge …"):
+        bst = _bestueckung(settings, int(bst_k))
+    if bst.violations:
+        st.error(f"Prüfer meldet Fehler: {bst.violations[0]}")
+    cols = st.columns(len(bst.plans))
+    reference = bst.plans[0].cost
+    for col, plan, gap in zip(cols, bst.plans, bst.gaps):
+        # Delta immer als „mein Wert minus Referenz“ (Referenz: Maschinenpraxis); die Farbe regelt delta_color="inverse" (Vorzeichen-Falle, DEMO-PLAYBOOK §2).
+        if plan is bst.plans[0]:
+            col.metric(plan.method, f"{plan.cost:.1f}".replace(".", ","), delta="Referenz", delta_color="off")
+        else:
+            col.metric(plan.method, f"{plan.cost:.1f}".replace(".", ","), delta=f"{plan.cost - reference:+.1f}".replace(".", ",") + " gegen Praxis", delta_color="inverse")
+    st.caption(f"Fahrstrecke des Kopfes in Rasterzellen (Tschebyscheff-Abstand), {bst.fi.n} Bestückorte, {bst.fi.n_types} Typen, {bst.fi.n_slots} Zuführplätze; Budget je Suchverfahren "
+               f"{C.BST_EVALS_PER_PART * bst.fi.n} Kostenauswertungen.")
+    kind, text = ev.verdict_bestueckung([p.cost for p in bst.plans], bst.k)
+    getattr(st, kind)(text)
+    st.plotly_chart(build_bestueck_methods_figure(bst.plans, bst.gaps), width="stretch", key="bst_methods_chart")
+    bst_view = st.radio("Fahrt anzeigen", C.BST_METHODS, index=len(C.BST_METHODS) - 1, horizontal=True, key="bst_view")
+    shown_plan = bst.plans[C.BST_METHODS.index(bst_view)]
+    st.plotly_chart(build_bestueck_figure(bst.fi, shown_plan, bst.k, a.inst.width, a.inst.height), width="stretch", key=f"bst_route_{bst_view}")
+    st.caption("Gestrichelt: der Kopf holt Teile an den Zuführplätzen, durchgezogen: er setzt sie. Die Zahl im Kreis ist der Platz in der Reihenfolge, die Farbe der Bauteiltyp. "
+               "Gefüllte Quadrate: Zuführplätze mit ihrem Typ, offene: frei.")
+    st.table([{"Zuführplatz": shown_plan.assignment[t] + 1, "Typ": bst.fi.type_names[t], "Teile": sum(1 for x in bst.fi.types if x == t)}
+              for t in sorted(range(bst.fi.n_types), key=lambda t: shown_plan.assignment[t])])
+
 st.markdown("---")
 
 # --- Methodenvergleich ---------------------------------------------------------------------------------------------------------------------
@@ -277,6 +331,9 @@ with st.expander("📐 Mathematische Formulierung"):
     st.latex(r"c_t(v) = (1 + h_v)\,(1 + p_t\, o_v), \qquad p_{t+1} = %s\, p_t, \qquad h_v \leftarrow h_v + %s\,(o_v - 1)\ \text{bei Überlast.}" % (f"{C.PF_GROWTH:g}", f"{C.PF_HISTORY:g}"))
     st.markdown("**Exakter Löser (Mini-Brett, 2-Pin-Netze).** Binärvariablen $x_{k,a} \\in \\{0,1\\}$ je Netz $k$ und Bogen $a$; Flusserhaltung je Netz und Knoten (eine Einheit vom ersten Pad zum zweiten, beide Lagen am Pad erlaubt) und höchstens ein Netz je Knoten:")
     st.latex(r"\min \sum_{k,a} c_a\, x_{k,a} \quad \text{u. d. N.} \quad \sum_{a \in \delta^{-}(v)} x_{k,a} - \sum_{a \in \delta^{+}(v)} x_{k,a} = b_k(v), \qquad \sum_{k} \sum_{a \in \delta^{-}(v)} x_{k,a} + [v \text{ ist Start}] \le 1.")
+    st.markdown("**Bestückung.** Bestückorte $j = 1, \\dots, n$ mit Position $p_j$ und Typ $\\tau(j)$; Zuführplätze $s = 1, \\dots, m$ mit Position $q_s$ ($m \\ge$ Zahl der Typen). Gesucht: eine **injektive Zuordnung** $\\sigma$ der Typen auf Plätze und eine **Reihenfolge** $\\pi$ der Bestückorte, die in Runden zu je $k$ Teilen gesetzt werden. Abstand $d(a, b) = \\max(|a_x - b_x|, |a_y - b_y|)$. Für $k = 1$ ist die Fahrt")
+    st.latex(r"\sum_{i=1}^{n} \Big[ d\big(p_{\pi(i-1)},\, q_{\sigma(\tau(\pi(i)))}\big) + d\big(q_{\sigma(\tau(\pi(i)))},\, p_{\pi(i)}\big) \Big] + d\big(p_{\pi(n)},\, \text{Start}\big), \qquad p_{\pi(0)} = \text{Start}.")
+    st.markdown("Bei **fester Reihenfolge** hängt jeder Summand von genau einem Platz ab: die Zuordnung ist dann ein lineares Zuordnungsproblem (Ungarische Methode, exakt); bei fester Zuordnung ist die Reihenfolge ein asymmetrisches Rundreiseproblem. Bei $k > 1$ kommen die Einteilung in Runden und je Runde die Reihenfolge von Holen und Setzen hinzu (alle $k!$ Setzreihenfolgen werden geprüft, das Holen läuft die Zuführgerade von einem Ende zum anderen ab).")
 
 # --- Grenzen -------------------------------------------------------------------------------------------------------------------------------
 
@@ -289,6 +346,7 @@ with st.expander("🚧 Wo die Annahmen enden"):
 - **Heuristiken beweisen nichts.** Bleibt ein Netz unverlegt, kann es an der Regel oder am Brett liegen. Nur der exakte Löser kann Unlösbarkeit beweisen, und der nur auf Mini-Brettern mit 2-Pin-Netzen.
 - **Die Platzierung ist kein Layouter.** Drei einfache Verfahren auf der Netzlänge (HPWL); keine Platzierung nach Verlegbarkeit, kein Ausrichten von Bauteilgruppen, keine Randbedingungen an Abstände zu Kanten.
 - **Reihenfolge-Aussagen gelten für diese Netzreihenfolgen.** Gemessen wird sequentielles Verlegen im kürzesten Weg; andere Regeln (zum Beispiel „engste Netze zuerst“) sind nicht untersucht.
+- **Bestückung ist ein Spielzeugmodell.** Ein Bestückort je Bauteil (ohne Stecker), ein Typ je Gehäuseart (ICs nach Pinzahl, Kondensator, Widerstand), ein Zuführplatz je Typ; keine Beschleunigung, keine Düsenwechsel, keine Teilehöhen, keine Bandbreiten, keine Zweiseitenbestückung, kein Nutzen mit mehreren Platinen. Die Zahlen sind Fahrstrecken in Rasterzellen, keine Maschinenzeiten; „kürzeste gefundene Fahrt“ ist keine bewiesene Untergrenze.
 - **Rechenzeit.** Nicht gemessen, nur die Zahl der Suchläufe; Rip-up ist auf {C.RRR_ACTIONS_PER_NET} Aufreißvorgänge je Netz begrenzt, Negotiated Congestion auf die Iterationsgrenze der Seitenleiste.
 """
     )
