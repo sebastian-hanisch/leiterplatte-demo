@@ -27,7 +27,7 @@ def test_methods_nothing_to_negotiate_on_a_loose_board():
 
 def test_methods_non_convergence_names_the_iteration_limit():
     kind, text = ev.verdict_methods(_metrics(7, 4, 2, converged=False, iterations=60))
-    assert kind == "warning" and "nach 60 Iterationen" in text and "größte konfliktfreie Teilmenge" in text and "Negotiated Congestion **2**" in text
+    assert kind == "warning" and "nach 60 Iterationen" in text and "konfliktfreie Teilmenge der letzten Wege" in text and "Negotiated Congestion **2**" in text
 
 
 def test_methods_failures_without_non_convergence_do_not_claim_unroutability():
@@ -47,7 +47,7 @@ def test_order_verdict_uses_a_decimal_comma_and_handles_equal_runs():
     kind, text = ev.verdict_order({"fixed": {C.ORDERS[0]: 1, C.ORDERS[1]: 1, C.ORDERS[2]: 1}, "random": [1, 2]}, 10)
     assert "Median 1,5" in text
     kind, text = ev.verdict_order({"fixed": {C.ORDERS[0]: 0, C.ORDERS[1]: 0, C.ORDERS[2]: 0}, "random": [0, 0, 0]}, 10)
-    assert kind == "info" and "ohne Wirkung" in text
+    assert kind == "info" and "keinen Unterschied" in text
 
 
 def _prow(name, hpwl, neg):
@@ -72,7 +72,7 @@ def test_placement_verdict_when_they_agree_and_on_ties():
 def test_via_verdict_reports_the_saved_vias_and_the_equal_case():
     rows = [{"via_cost": 1, "vias": 29, "wirelength": 624, "failed": 0}, {"via_cost": 30, "vias": 12, "wirelength": 690, "failed": 1}]
     kind, text = ev.verdict_via(rows)
-    assert kind == "info" and "Via-Kosten 1 → 30" in text and "Vias 29 → 12" in text and "Länge 624 → 690" in text and "unverlegt 0 → 1" in text and "sparen 17 Vias" in text
+    assert kind == "info" and "Via-Kosten 1 → 30" in text and "Vias 29 → 12" in text and "Länge 624 → 690" in text and "unverlegt 0 → 1" in text and "sparen 17 Vias" in text and "um +66 Zellen" in text and "nur grob vergleichbar" in text
     same = [dict(rows[0], vias=5), dict(rows[1], vias=5)]
     assert "sparen hier keine Vias" in ev.verdict_via(same)[1]
 

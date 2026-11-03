@@ -104,6 +104,64 @@ def test_heuristics_agree_with_the_exact_solver_on_small_boards(seed):
             assert R.routing_cost(board, r, via) >= exact.cost - 1e-9
 
 
+def _walled_in_nets(board):
+    """Netze, deren beide Pads für sich allein (ohne jedes andere Netz zu verlegen) nicht zusammenhängen: nur freie Zellen und eigene Pads, beide Lagen, Via überall.
+    Ein solches Netz kann kein Verfahren verlegen, das Brett ist also unlösbar. Rechenweg: Zusammenhangskomponenten in `networkx`, ohne Suche und Löser der Demo."""
+    w, cells = board.width, board.cells
+    out = []
+    for net, (s, t) in enumerate(board.pads):
+        g = nx.Graph()
+        allowed = lambda v: board.fixed[v] in (FREE, net)
+        for u in range(board.nodes):
+            if not allowed(u):
+                continue
+            g.add_node(u)
+            layer, r = divmod(u, cells)
+            y, x = divmod(r, w)
+            for v in ((u + 1) if x < w - 1 else None, (u + w) if y < board.height - 1 else None, u + cells if layer == 0 else None):
+                if v is not None and allowed(v):
+                    g.add_edge(u, v)
+        if not any(nx.has_path(g, a, b) for a in (s, s + cells) for b in (t, t + cells)):
+            out.append(net)
+    return out
+
+
+def test_rip_up_reports_a_physically_walled_in_net_as_unrouted():
+    """Seed 300058 (5 x 5, 4 Netze, 1 Sperrzelle): Netz 2 liegt in einer Tasche aus Sperrzelle und fremden Pads. Rip-up meldete es früher nicht, es fiel still aus
+    der Warteschlange; Ergebnis: weder verlegt noch unverlegt. Die Unlösbarkeit kommt hier aus `networkx`, nicht aus einem Löserstatus."""
+    board = mini_board(random_mini(300058, 5, 5, 4, 1))
+    assert 2 in _walled_in_nets(board)
+    for order in ([0, 1, 2, 3], [2, 0, 1, 3], [3, 2, 1, 0]):
+        for r in (R.route_sequential(board, order, 4.0), R.route_rrr(board, order, 4.0), R.route_negotiated(board, order, 4.0)):
+            assert 2 in r.failed, r.method
+            assert set(r.nodes) | set(r.failed) == {0, 1, 2, 3}, r.method
+            assert R.check_feasible(board, r) == []
+
+
+@pytest.mark.parametrize("shape", [(6, 5, 5, 1), (5, 5, 4, 1), (6, 6, 6, 0)])
+def test_no_method_loses_a_net_and_all_report_failures_where_the_solver_proves_infeasibility(shape):
+    """Alle 150 Bretter je Form (Seeds 300000 bis 300149): jede Regel liefert für jedes Netz entweder eine Verlegung oder die Meldung unverlegt, und wo der Löser
+    Unlösbarkeit beweist, melden alle drei Regeln mindestens ein unverlegtes Netz. Wo ein Netz eingemauert ist (networkx), gilt das auch ohne Löser."""
+    pytest.importorskip("ortools")
+    from lpl_exact import solve_exact
+
+    w, h, n, b = shape
+    for seed in range(300000, 300150):
+        board = mini_board(random_mini(seed, w, h, n, b))
+        order = list(range(n))
+        runs = (R.route_sequential(board, order, 4.0), R.route_rrr(board, order, 4.0), R.route_negotiated(board, order, 4.0))
+        walled = _walled_in_nets(board)
+        proven = solve_exact(board, 4.0).status == "infeasible"
+        for r in runs:
+            assert set(r.nodes) | set(r.failed) == set(order), (seed, r.method)
+            assert set(r.nodes).isdisjoint(r.failed), (seed, r.method)
+            assert R.check_feasible(board, r) == [], (seed, r.method)
+            if walled:
+                assert set(walled) <= set(r.failed), (seed, r.method)
+            if proven:
+                assert r.failed, (seed, r.method)
+
+
 def test_some_small_board_is_solvable_but_defeats_every_net_order():
     """Der Kern der Demo auf Mini-Brettern, gezählt statt behauptet: es gibt lösbare Bretter, an denen keine Reihenfolge klappt, und andere, an denen nur manche klappen."""
     pytest.importorskip("ortools")

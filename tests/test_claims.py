@@ -64,6 +64,13 @@ def test_rip_up_never_leaves_more_nets_unrouted_than_the_sequential_start(sweeps
     assert all(r["rrr"] <= r["sequential"] for rows in sweeps["methods"].values() for r in rows)
 
 
+def test_search_effort_of_rip_up_and_negotiated_congestion_by_density(sweeps):
+    """Grenzen: der Aufwand in Suchläufen ist je nach Dichte mal bei Rip-up, mal bei Negotiated Congestion größer (Mittel über 20 Instanzen)."""
+    means = {u: (_mean(rows, "rrr_searches"), _mean(rows, "negotiated_searches")) for u, rows in sweeps["methods"].items()}
+    assert means[50][1] > means[50][0] and means[60][1] < means[60][0] and means[70][1] > means[70][0]
+    assert round(means[70][0]) == 760 and round(means[70][1]) == 1107
+
+
 # ---- Befund 2: die Reihenfolge ------------------------------------------------------------------------------------------------------------
 
 def test_order_alone_changes_the_number_of_unrouted_nets(sweeps):
@@ -101,6 +108,11 @@ def test_the_placement_with_the_shortest_nets_routes_as_well_as_the_best_one_on_
         assert shortest["negotiated"] == easiest["negotiated"]
 
 
+def test_the_three_placements_differ_in_unrouted_nets_on_only_four_instances(sweeps):
+    differing = [i for i, inst in enumerate(sweeps["place"]) if len({r["negotiated"] for r in inst}) > 1]
+    assert len(differing) == 4
+
+
 # ---- Befund 4: Via-Kosten -----------------------------------------------------------------------------------------------------------------
 
 def test_via_cost_table(sweeps):
@@ -110,6 +122,18 @@ def test_via_cost_table(sweeps):
         assert all(r["via_cost"] == cost for r in rows)
         assert _mean(rows, "vias") == pytest.approx(vias, abs=0.051)
         assert round(_mean(rows, "wirelength")) == wl
+    assert [sum(inst[k]["failed"] for inst in sweeps["via"]) for k in range(4)] == [7, 4, 5, 5]
+
+
+def test_via_cost_table_on_the_instances_that_route_everything_at_every_via_cost(sweeps):
+    """Nur Instanzen, in denen bei allen vier Via-Kosten alle Netze verlegt sind: dort sind die Längen vergleichbar."""
+    full = [inst for inst in sweeps["via"] if all(r["failed"] == 0 for r in inst)]
+    assert len(full) == 15
+    vias = [sum(inst[k]["vias"] for inst in full) / len(full) for k in range(4)]
+    lengths = [sum(inst[k]["wirelength"] for inst in full) / len(full) for k in range(4)]
+    assert vias == pytest.approx([13.7, 9.7, 7.5, 7.1], abs=0.051)
+    assert lengths == pytest.approx([486.5, 503.6, 507.5, 522.3], abs=0.051)
+    assert lengths[3] / lengths[0] - 1 == pytest.approx(0.07, abs=0.005)
 
 
 # ---- Befund 5: Mini-Bretter gegen den exakten Löser ---------------------------------------------------------------------------------------
@@ -188,17 +212,17 @@ def test_named_mini_boards():
 
 # ---- Befund: Rip-up hängt an seiner Aktionsgrenze -----------------------------------------------------------------------------------------
 
-def test_rip_up_budget_trade_off_on_six_fixed_instances():
+def test_rip_up_budget_trade_off_on_the_twenty_fixed_instances():
     import lpl_router as R
 
     totals = {3: [0, 0], 12: [0, 0]}
-    for seed in range(100000, 100006):
+    for seed in SEEDS:
         inst, poses, board, hp, order = ev.prepare(Settings(util=70, seed=seed))
         for budget in totals:
             r = R.route_rrr(board, list(order), 4.0, budget)
             totals[budget][0] += len(r.failed)
             totals[budget][1] += r.searches
-    assert totals == {3: [5, 4225], 12: [2, 12235]}
+    assert totals == {3: [37, 15195], 12: [29, 49935]}
 
 
 def test_negotiated_congestion_needs_fewer_searches_than_rip_up_in_the_standard_case():
@@ -263,6 +287,7 @@ def test_bestueckung_gap_to_the_shortest_trip(bestueck_sweeps, k):
 
 def test_bestueckung_extremes_named_in_the_readme(bestueck_sweeps):
     rows = bestueck_sweeps[4]
+    assert max(r["gaps"][1] for r in bestueck_sweeps[1]) == pytest.approx(1.58, abs=0.0051)    # eine Düse: größter Verlust der Trennung
     assert max(r["gaps"][1] for r in rows) == pytest.approx(13.62, abs=0.0051)
     assert max(r["gaps"][0] for r in rows) == pytest.approx(35.73, abs=0.0051)
     # die Lücke der Trennung wächst mit der Düsenzahl (Mittel über 20 Instanzen)

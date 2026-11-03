@@ -46,7 +46,8 @@ def _rip_victims(state: RouteState, net: int, nodes: set) -> list:
 
 def route_rrr(board: Board, order, via_cost: float, actions_per_net: int = C.RRR_ACTIONS_PER_NET) -> Routing:
     """Rip-up and Reroute: erst sequentiell. Dann darf jedes unverlegte Netz gegen einen Zuschlag fremde Netze durchqueren; diese werden aufgerissen,
-    der Weg wird festgelegt und die Opfer neu (hart) verlegt. Aktionsgrenze `actions_per_net` mal Netzzahl; am Ende gilt der beste Stand."""
+    der Weg wird festgelegt und die Opfer neu (hart) verlegt. Aktionsgrenze `actions_per_net` mal Netzzahl; am Ende gilt der beste Stand.
+    Ein Netz, das selbst durch fremde Netze hindurch nicht verbindbar ist (eingemauert), bleibt als unverlegt gemeldet."""
     state = RouteState(board)
     pending = deque()
     for n in order:
@@ -56,12 +57,14 @@ def route_rrr(board: Board, order, via_cost: float, actions_per_net: int = C.RRR
         else:
             state.commit(n, *r)
     best = (len(pending), state.snapshot(), list(pending))
+    walled_in = []        # Netze, die selbst durch fremde Netze hindurch nicht verbindbar sind (Sperrzellen, fremde Pads): bleiben unverlegt
     budget = actions_per_net * len(order)
     while pending and budget > 0:
         budget -= 1
         n = pending.popleft()
         r = route_net(board, state, n, "cross", via_cost)
         if r is None:
+            walled_in.append(n)
             continue
         nodes, edges = r
         victims = _rip_victims(state, n, nodes)
@@ -76,8 +79,8 @@ def route_rrr(board: Board, order, via_cost: float, actions_per_net: int = C.RRR
                 pending.append(v)
             else:
                 state.commit(v, *rr)
-        if len(pending) < best[0]:
-            best = (len(pending), state.snapshot(), list(pending))
+        if len(pending) + len(walled_in) < best[0]:
+            best = (len(pending) + len(walled_in), state.snapshot(), list(pending) + walled_in)
     state.restore(best[1])
     return _result("Rip-up and Reroute", state, order, best[2])
 

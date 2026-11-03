@@ -85,7 +85,7 @@ with st.container(key="kopf"):
 st.markdown(
     """
 Ein **Sensorboard** (zwei Stecker, ICs, Kondensatoren, Widerstände) wird platziert und auf einem **Raster mit zwei Lagen** verlegt: jedes **Netz** muss seine Pads verbinden,
-zwei Netze dürfen keine Zelle teilen, und ein **Via** wechselt die Lage. Jedes Netz für sich ist ein einfacher kürzester Weg, **zusammen** blockieren sich die Netze,
+zwei Netze dürfen keine Zelle teilen, und ein **Via** wechselt die Lage. Jedes Netz für sich lässt sich mit Kürzeste-Wege-Suchen verbinden (bei mehr als zwei Pads heuristisch), **zusammen** blockieren sich die Netze,
 und die **Reihenfolge** entscheidet mit. Die Demo vergleicht drei Verlegeregeln (**sequentiell**, **Rip-up and Reroute**, **Negotiated Congestion**) und prüft die Aussagen
 auf einem **Mini-Brett** mit einem **exakten Löser**.
 
@@ -105,8 +105,8 @@ with st.sidebar:
     st.header("⚙️ Einstellungen")
     st.markdown("**Brett**")
     n_ic = st.slider("ICs", *bounds("n_ic_slider"), key="n_ic_slider", help="Wie viele ICs (je 6 bis 12 Pins) das Sensorboard trägt; dazu je IC ein Kondensator und mindestens zwei Widerstände.")
-    util = st.slider("Dichte (%)", *bounds("util_slider"), key="util_slider", help="Bauteilfläche samt Mindestabstand geteilt durch die Brettfläche: je dichter, desto kleiner das Brett.")
-    pin_use = st.slider("Pin-Nutzung (%)", *bounds("pin_use_slider"), key="pin_use_slider", help="Anteil der freien IC-Pins, die in einem Signalnetz hängen: mehr Netze, mehr Gedränge.")
+    util = st.slider("Dichte (%)", *bounds("util_slider"), key="util_slider", help="Nennwert: Bauteilfläche samt Mindestabstand geteilt durch die Brettfläche (tatsächlich 1 bis 2 Punkte, bei kleinen Platinen bis zu 5 Punkte darunter): je dichter, desto kleiner das Brett.")
+    pin_use = st.slider("Pin-Nutzung (%)", *bounds("pin_use_slider"), key="pin_use_slider", help="Zielanteil der freien IC-Pins in Signalnetzen (tatsächlich etwas darunter): mehr Netze, mehr Gedränge.")
     st.markdown("**Platzierung**")
     placement = st.selectbox("Platzierung", choices("placement_select"), key="placement_select",
                              help="Zufall: legale Zufallslagen. Quadratisch: Federmodell mit Gleichungssystem, danach Legalisierung. Simulated Annealing: Suche auf der Netzlänge.")
@@ -114,7 +114,7 @@ with st.sidebar:
     order = st.selectbox("Netzreihenfolge", choices("order_select"), key="order_select", help="In welcher Reihenfolge die Netze versucht werden (nach der Halbumfangs-Länge der Netze).")
     via = st.slider("Via-Kosten", *bounds("via_slider"), key="via_slider", help="Zusatzkosten eines Lagenwechsels in Zellenschritten.")
     iterations = st.slider("Iterationsgrenze (Negotiated Congestion)", *bounds("iter_slider"), key="iter_slider",
-                           help="Nach so vielen Durchläufen gibt Negotiated Congestion auf und zeigt die größte konfliktfreie Teilmenge.")
+                           help="Nach so vielen Durchläufen gibt Negotiated Congestion auf und zeigt eine konfliktfreie Teilmenge der letzten Wege.")
     seed = st.number_input("Zufalls-Seed der Instanz", *bounds("seed_input"), key="seed_input", step=1)
     st.button("🎲 Neue Instanz generieren", width="stretch", on_click=randomize_seed)
 
@@ -171,7 +171,7 @@ for method, m in a.metrics.items():
         "konvergiert": ("ja" if m["converged"] else "nein") if method == C.METHODS[2] else "–",
     })
 st.table(rows)
-st.caption("Länge, Vias und Umweg zählen nur die verlegten Netze und sind zwischen Regeln nur vergleichbar, wenn gleich viele Netze verlegt sind (wer weniger Netze verlegt, hat kürzere Leiterbahnen).")
+st.caption("Länge, Vias und Umweg zählen nur die verlegten Netze und sind zwischen Regeln nur vergleichbar, wenn gleich viele Netze verlegt sind (wer weniger Netze verlegt, hat meist kürzere Leiterbahnen).")
 kind, text = ev.verdict_methods(a.metrics)
 getattr(st, kind)(text)
 
@@ -185,7 +185,7 @@ if done and done[0] == settings and done[1] == view:
 
 # --- Kernfrage -----------------------------------------------------------------------------------------------------------------------------
 
-st.markdown("## ❓ Kernfrage: Entscheidet die Reihenfolge, ob alle Netze auf die Platine passen?")
+st.markdown("## ❓ Kernfrage: Entscheidet die Reihenfolge, wie viele Netze unverlegt bleiben?")
 with st.spinner("Verlege in vielen Reihenfolgen …"):
     spread = _spread(settings)
 kind, text = ev.verdict_order(spread, len(a.inst.nets))
@@ -199,8 +199,8 @@ st.markdown("## 🏭 Bestückung: wie setzt der Automat die Platine?")
 st.markdown(
     "Die Bauteile dieser Platine (ohne die Stecker) werden von einem Portalautomaten gesetzt. Jeder Bauteiltyp liegt auf **einem Zuführplatz** einer Reihe unter dem Brett; der Kopf hat "
     "**k Düsen** und holt erst k Teile, setzt dann k Teile. Zwei Entscheidungen: **welcher Typ auf welchen Platz** und **in welcher Reihenfolge gesetzt wird**. "
-    "Verglichen werden die **Maschinenpraxis** (häufigste Typen in die Mitte, nächstes Teil zuerst), **erst Plätze, dann Reihenfolge** (Ungarische Methode, danach nur die Reihenfolge), "
-    "**abwechselnd** und **gemeinsam** (beides in einer Suche) bei gleichem Rechenbudget. Die Suche braucht einige Sekunden und läuft erst auf Klick."
+    "Verglichen werden die **Maschinenpraxis** (häufigste Typen in die Mitte, nächstes Teil zuerst; Stand-in für eine einfache Praxisregel), **erst Plätze, dann Reihenfolge** (Ungarische Methode, danach nur die Reihenfolge), "
+    "**abwechselnd** und **gemeinsam** (beides in einer Suche) bei gleichem Budget an Zügen. Die Suche braucht einige Sekunden und läuft erst auf Klick."
 )
 bst_k = st.slider("Düsen am Kopf", C.BST_K_MIN, C.BST_K_MAX, C.BST_DEFAULT_K, key="bst_k",
                   help="Eine Düse: ein Teil holen, setzen. Mehr Düsen: erst k Teile holen, dann k setzen; je Runde werden alle k! Setzreihenfolgen geprüft.")
@@ -220,7 +220,7 @@ if st.session_state.get("bst_done") == (settings, int(bst_k)):
         else:
             col.metric(plan.method, f"{plan.cost:.1f}".replace(".", ","), delta=f"{plan.cost - reference:+.1f}".replace(".", ",") + " gegen Praxis", delta_color="inverse")
     st.caption(f"Fahrstrecke des Kopfes in Rasterzellen (Tschebyscheff-Abstand), {bst.fi.n} Bestückorte, {bst.fi.n_types} Typen, {bst.fi.n_slots} Zuführplätze; Budget je Suchverfahren "
-               f"{C.BST_EVALS_PER_PART * bst.fi.n} Kostenauswertungen.")
+               f"{C.BST_EVALS_PER_PART * bst.fi.n} Züge.")
     kind, text = ev.verdict_bestueckung([p.cost for p in bst.plans], bst.k)
     getattr(st, kind)(text)
     st.plotly_chart(build_bestueck_methods_figure(bst.plans, bst.gaps), width="stretch", key="bst_methods_chart")
@@ -247,11 +247,11 @@ Netze zugebaut haben, kommt nicht mehr durch; kein Netz wird je wieder angefasst
 
 **Rip-up and Reroute.** Erst sequentiell. Dann darf jedes unverlegte Netz gegen einen Zuschlag ({C.RRR_CROSS:g} Schritte je Zelle) **fremde Netze durchqueren**; diese werden aufgerissen,
 das neue Netz wird festgelegt und die Opfer werden neu verlegt (jetzt um das neue Netz herum). Aufgerissene Zellen merken sich das, damit dieselbe Engstelle nicht immer
-wieder geräumt wird. Aktionsgrenze: {C.RRR_ACTIONS_PER_NET} Aufreißvorgänge je Netz (ein größeres Budget verbessert Rip-up, kostet aber ein Vielfaches an Suchläufen); am Ende gilt der beste Stand.
+wieder geräumt wird. Aktionsgrenze: insgesamt {C.RRR_ACTIONS_PER_NET} mal Netzzahl Aufreißversuche (ein größeres Budget verbessert Rip-up, kostet aber ein Vielfaches an Suchläufen); am Ende gilt der beste Stand.
 
 **Negotiated Congestion (PathFinder).** Alle Netze dürfen sich zunächst Zellen **teilen**, das Teilen kostet aber: der Preis einer Zelle ist (1 + Verlauf) · (1 + Preis · Belegung).
 Nach jedem Durchlauf steigt der Preis um den Faktor {C.PF_GROWTH:g}, überlastete Zellen erhöhen ihren Verlauf um {C.PF_HISTORY:g} je zusätzlichem Netz, und nur Netze auf überlasteten Zellen
-werden neu verlegt. Ende: keine Zelle mehr doppelt belegt (konvergiert) oder die Iterationsgrenze ({a.settings.iterations}); dann bleibt die größte konfliktfreie Teilmenge der Netze.
+werden neu verlegt. Ende: keine Zelle mehr doppelt belegt (konvergiert) oder die Iterationsgrenze ({a.settings.iterations}); dann bleibt eine konfliktfreie Teilmenge der letzten Wege (gierig gewählt).
 
 Kein Verfahren ist vollständig: wenn eines Netze unverlegt lässt, heißt das nicht, dass es keine Lösung gibt. Nur der exakte Löser auf dem Mini-Brett kann Unlösbarkeit beweisen.
 """
@@ -283,7 +283,7 @@ Kein Verfahren ist vollständig: wenn eines Netze unverlegt lässt, heißt das n
     with tab_exact:
         # Der Tab ist selbstständig: eigener Button, Spinner und Ergebnis, gegen das aktuelle Szenario geprüft (DEMO-PLAYBOOK §2).
         st.markdown(
-            "Auf einem **Mini-Brett** (5 bis 6 Netze, je zwei Pads) lässt sich alles nachprüfen: **alle Reihenfolgen** des sequentiellen Verlegens werden aufgezählt, "
+            "Auf einem **Mini-Brett** (5 Netze, je zwei Pads) lässt sich alles nachprüfen: **alle Reihenfolgen** des sequentiellen Verlegens werden aufgezählt, "
             "und ein **exakter Löser** (OR-Tools CP-SAT, knotendisjunkte Wege kleinster Kosten) liefert eine Lösung oder beweist, dass es keine gibt. "
             "Die Via-Kosten und die Iterationsgrenze kommen aus der Seitenleiste."
         )
@@ -347,7 +347,7 @@ with st.expander("🚧 Wo die Annahmen enden"):
 - **Die Platzierung ist kein Layouter.** Drei einfache Verfahren auf der Netzlänge (HPWL); keine Platzierung nach Verlegbarkeit, kein Ausrichten von Bauteilgruppen, keine Randbedingungen an Abstände zu Kanten.
 - **Reihenfolge-Aussagen gelten für diese Netzreihenfolgen.** Gemessen wird sequentielles Verlegen im kürzesten Weg; andere Regeln (zum Beispiel „engste Netze zuerst“) sind nicht untersucht.
 - **Bestückung ist ein Spielzeugmodell.** Ein Bestückort je Bauteil (ohne Stecker), ein Typ je Gehäuseart (ICs nach Pinzahl, Kondensator, Widerstand), ein Zuführplatz je Typ; keine Beschleunigung, keine Düsenwechsel, keine Teilehöhen, keine Bandbreiten, keine Zweiseitenbestückung, kein Nutzen mit mehreren Platinen. Die Zahlen sind Fahrstrecken in Rasterzellen, keine Maschinenzeiten; „kürzeste gefundene Fahrt“ ist keine bewiesene Untergrenze.
-- **Rechenzeit.** Nicht gemessen, nur die Zahl der Suchläufe; Rip-up ist auf {C.RRR_ACTIONS_PER_NET} Aufreißvorgänge je Netz begrenzt, Negotiated Congestion auf die Iterationsgrenze der Seitenleiste.
+- **Rechenzeit.** Nicht gemessen, nur die Zahl der Suchläufe; Rip-up ist auf insgesamt {C.RRR_ACTIONS_PER_NET} mal Netzzahl Aufreißversuche begrenzt, Negotiated Congestion auf die Iterationsgrenze der Seitenleiste.
 """
     )
 

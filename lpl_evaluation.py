@@ -126,6 +126,8 @@ def method_row(settings: Settings) -> dict:
         "worst_random_order": max(spread["random"]),
         "rrr": a.metrics[C.METHODS[1]]["failed"],
         "negotiated": a.metrics[C.METHODS[2]]["failed"],
+        "rrr_searches": a.metrics[C.METHODS[1]]["searches"],
+        "negotiated_searches": a.metrics[C.METHODS[2]]["searches"],
         "converged": a.metrics[C.METHODS[2]]["converged"],
         "iterations": a.metrics[C.METHODS[2]]["iterations"],
         "violations": sum(len(v) for v in a.violations.values()),
@@ -239,7 +241,7 @@ def verdict_methods(metrics: dict) -> tuple[str, str]:
     if p["failed"] == 0 and s["failed"] == 0:
         return "info", head + " Das Brett ist so locker, dass schon die einfache Reihenfolge alles unterbringt: hier gibt es nichts zu verhandeln."
     if not p["converged"]:
-        return "warning", head + f" Negotiated Congestion hat nach {p['iterations']} Iterationen keinen konfliktfreien Stand erreicht; angezeigt wird die größte konfliktfreie Teilmenge."
+        return "warning", head + f" Negotiated Congestion hat nach {p['iterations']} Iterationen keinen konfliktfreien Stand erreicht; angezeigt wird eine konfliktfreie Teilmenge der letzten Wege (gierig gewählt)."
     return "warning", head + " Auch Verhandeln schafft nicht alle Netze: das Brett ist zu dicht oder das Verfahren findet die Lösung nicht (es beweist keine Unlösbarkeit)."
 
 
@@ -252,7 +254,7 @@ def verdict_order(spread: dict, n_nets: int) -> tuple[str, str]:
             f"**{lo} bis {hi}** Netze unverlegt (Median {_g(med)}). Kurze zuerst: {fixed[C.ORDERS[0]]}, lange zuerst: {fixed[C.ORDERS[1]]}, Netzliste: {fixed[C.ORDERS[2]]}.")
     if hi > lo:
         return "success", text + " Die Reihenfolge allein entscheidet also mit."
-    return "info", text + " Auf diesem Brett ist die Reihenfolge ohne Wirkung (alle Läufe gleich)."
+    return "info", text + f" Auf diesem Brett zeigen die {len(rand)} Zufallsreihenfolgen keinen Unterschied."
 
 
 def verdict_placement(rows: list) -> tuple[str, str]:
@@ -272,7 +274,9 @@ def verdict_via(rows: list) -> tuple[str, str]:
     text = (f"Via-Kosten {first['via_cost']} → {last['via_cost']}: Vias {first['vias']} → {last['vias']}, Länge {first['wirelength']} → {last['wirelength']} Zellen; "
             f"unverlegt {first['failed']} → {last['failed']}.")
     if saved > 0:
-        return "info", text + f" Teure Vias sparen {saved} Vias und verlängern die Leiterbahnen."
+        dl = last["wirelength"] - first["wirelength"]
+        mixed = " (bei verschieden vielen verlegten Netzen nur grob vergleichbar)" if first["failed"] != last["failed"] else ""
+        return "info", text + f" Teure Vias sparen {saved} Vias; die Länge ändert sich um {dl:+d} Zellen{mixed}."
     return "info", text + " Teure Vias sparen hier keine Vias."
 
 
