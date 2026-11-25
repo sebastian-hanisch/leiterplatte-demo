@@ -1,7 +1,6 @@
 # Leiterplatte: welche Verlegeregel bekommt alle Netze unter? – Streamlit-Demo
 
-<!-- TODO nach dem Deploy: direkt hierher den Live-Link setzen (Leerzeile davor und danach):
-**[→ Demo live ausprobieren](https://sebastianhanisch-leiterplatte-demo.streamlit.app/)** -->
+**[→ Demo live ausprobieren](https://sebastianhanisch-leiterplatte-demo.streamlit.app/)**
 
 Fall-Demo für die Website „Sebastian Hanisch – Operations Research und Machine Learning“ (`demos.html`). Ein synthetisches **Sensorboard** (zwei Stecker, bis zu 8 ICs, je IC ein Kondensator, Pull-up-Widerstände) wird auf einem Raster mit **zwei Lagen** platziert und verlegt. Jedes **Netz** muss seine Pads verbinden, zwei Netze dürfen keine Zelle teilen, ein **Via** wechselt die Lage. Verglichen werden drei Verlegeregeln: **sequentiell** (ein Netz nach dem anderen, kürzester Weg), **Rip-up and Reroute** (fremde Netze durchqueren, aufreißen, um das neue herum neu verlegen) und **Negotiated Congestion** (alle Netze dürfen zunächst Zellen teilen, das Teilen wird mit jeder Iteration teurer). Drei Platzierungsarten (Zufall, quadratisch, Simulated Annealing) liefern die Ausgangslage; auf einem **Mini-Brett** prüft ein exakter Löser (OR-Tools CP-SAT) die Aussagen. Als zweiter Teil wird dieselbe Platine **bestückt**: ein Portalautomat holt die Bauteile von Zuführplätzen und setzt sie; **welcher Typ auf welchen Platz** und **in welcher Reihenfolge** entscheiden über die Fahrstrecke, und bei einem Kopf mit mehreren Düsen hängen die beiden Entscheidungen zusammen.
 
